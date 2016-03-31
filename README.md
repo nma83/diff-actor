@@ -33,5 +33,6 @@ ver1 and ver2 of file-name. Default values:
 
 ## Demo
 
-Here is an [![asciicast](https://asciinema.org/a/38do6903rudaylp041xtcy24f.png)](https://asciinema.org/a/38do6903rudaylp041xtcy24f)
- of diff-actor acting out its own git history.
+Here is an ASCII-cast of diff-actor acting out its own git history.
+[![asciicast](https://asciinema.org/a/38do6903rudaylp041xtcy24f.png)](https://asciinema.org/a/38do6903rudaylp041xtcy24f)
+ 
