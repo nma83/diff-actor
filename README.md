@@ -28,9 +28,10 @@ Perforce and Git are supported right now, with functions:
 This function uses the VCS specific diff command for diff-ing
 ver1 and ver2 of file-name. Default values:
 
-    ver1 - first version
-    ver2 - top of tree (HEAD)
+    ver1 - #1 for P4, HEAD^ for Git
+    ver2 - top of tree
 
 ## Demo
 
-TODO embed aciinema video.
+Here is an [![asciicast](https://asciinema.org/a/38do6903rudaylp041xtcy24f.png)](https://asciinema.org/a/38do6903rudaylp041xtcy24f)
+ of diff-actor acting out its own git history.

@@ -59,7 +59,6 @@
 
 ;; Entry points
 (defun diff-actor-file (file-name-1 file-name-2 &optional real-file-name)
-  (setq diff-actor-real-file-name file-name-1)
   (diff-actor-act file-name-1 (diff-actor-get-diff file-name-1 file-name-2)
                   real-file-name))
 
@@ -74,7 +73,6 @@
             (diff-ver-2 (or ver-2 "head"))
             (tmp-file-1 (make-temp-file "diff-actor"))
             (tmp-file-2 (make-temp-file "diff-actor")))
-        (setq diff-actor-real-file-name diff-file)
         (message "printing to %s, %s" tmp-file-1 tmp-file-2)
         (call-process p4-executable nil (list :file tmp-file-1)
                       nil "print" "-q" (concat diff-file "#" diff-ver-1))
