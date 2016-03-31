@@ -50,18 +50,22 @@
 ;; Constants
 (defconst diff-actor-diff-header "\\(^[0-9].*\n\\)")
 
-;; Globals
-(defvar diff-actor-real-file-name "")
 ;; Delay between edits in sec
 (defvar diff-actor-edit-delay 2)
+;; Finer delays in msec
+(defvar diff-actor-char-delay 100)
+(defvar diff-actor-word-delay 200)
+(defvar diff-actor-line-delay 500)
 
 ;; Entry points
-(defun diff-actor-file (file-name-1 file-name-2)
+(defun diff-actor-file (file-name-1 file-name-2 &optional real-file-name)
   (setq diff-actor-real-file-name file-name-1)
-  (diff-actor-act file-name-1 (diff-actor-get-diff file-name-1 file-name-2)))
+  (diff-actor-act file-name-1 (diff-actor-get-diff file-name-1 file-name-2)
+                  real-file-name))
 
 ;; ... more for VCSs
 ;; P4 versions diff, requires p4
+;; Versions #1 and #head are diff-ed
 (defun diff-actor-p4-vers (&optional file-name ver-1 ver-2)
   (interactive)
   (if (file-executable-p p4-executable)
@@ -76,18 +80,32 @@
                       nil "print" "-q" (concat diff-file "#" diff-ver-1))
         (call-process p4-executable nil (list :file tmp-file-2)
                       nil "print" "-q" (concat  diff-file "#" diff-ver-2))
-        ;;(with-temp-file tmp-file-1
-        ;;  (p4-print (list (concat diff-file "#" diff-ver-1))))
-        ;;(with-temp-file tmp-file-2
-        ;;  (p4-print (list (concat diff-file "#" diff-ver-2))))
         (diff-actor-file tmp-file-1 tmp-file-2))))
 
+;; Git versions diff, requires git
+;; Versions HEAD-1 and HEAD and diff-ed
+(defun diff-actor-git-vers (&optional file-name ver-1 ver-2)
+  (interactive)
+  (if (file-executable-p (executable-find magit-git-executable))
+      (let ((diff-file (or file-name (read-file-name "Enter file name: ")))
+            (diff-ver-1 (or ver-1 "HEAD^"))
+            (diff-ver-2 (or ver-2 "HEAD"))
+            (tmp-file-1 (make-temp-file "diff-actor"))
+            (tmp-file-2 (make-temp-file "diff-actor")))
+        (message "printing to %s, %s" tmp-file-1 tmp-file-2)
+        (call-process magit-git-executable nil (list :file tmp-file-1)
+                      nil "show" (concat diff-ver-1 ":" diff-file))
+        (call-process magit-git-executable nil (list :file tmp-file-2)
+                      nil "show" (concat diff-ver-2 ":" diff-file))
+        (diff-actor-file tmp-file-1 tmp-file-2 diff-file))))
+
 ;; Backend functions
-(defun diff-actor-act (file-name-1 diff-string)
-  (switch-to-buffer (concat diff-actor-real-file-name " (act)"))
-  (insert-file-contents file-name-1)
-  (mapc 'diff-actor-act-chunk (diff-actor-diff-chunks diff-string))
-  (message "done acting"))
+(defun diff-actor-act (file-name-1 diff-string real-file-name)
+  (let ((buf-name (or real-file-name file-name-1)))
+    (switch-to-buffer (concat buf-name " (act)"))
+    (insert-file-contents file-name-1)
+    (mapc 'diff-actor-act-chunk (diff-actor-diff-chunks diff-string))
+    (message "done acting")))
 
 (defun diff-actor-act-chunk (chunk)
   (let ((decoded-header
@@ -108,9 +126,9 @@
         (new-lines (plist-get header 'new))
         (new-stripped (substring new 0 -1)))
     (goto-line (nth 0 new-lines))
-    ;;(insert (format "changing %s to %s" old-lines new-lines))
+    ;;(insert (format "c %s to %s" old-lines new-lines))
     (kill-line (diff-actor-lines-in-range old-lines))
-    (insert new-stripped)))
+    (diff-actor-insert new-stripped)))
 
 (defun diff-actor-act-delete (header old new)
   (let ((old-lines (plist-get header 'old))
@@ -125,8 +143,26 @@
         (old-stripped (substring old 0 -1)))
     ;; the added lines will be assigned to 'old by the chunker
     (goto-line (nth 0 new-lines))
-    ;;(insert (format "adding %s to %s" old-lines new-lines))
-    (insert old-stripped)))
+    ;;(insert (format "a %s to %s" old-lines new-lines))
+    (diff-actor-insert old-stripped)))
+
+;; The insert function that mimics typing
+(defun diff-actor-insert (text)
+  (let ((lines (split-string text "\n")))
+    (dolist (line lines)
+      (let ((words (split-string line " ")))
+        (dolist (word words)
+          (dotimes (chari (length word))
+            (insert (elt word chari))
+            (diff-actor-wait-msec diff-actor-char-delay))
+          (insert " ")
+          (diff-actor-wait-msec diff-actor-word-delay))
+        (insert "\n")
+        (diff-actor-wait-msec diff-actor-line-delay)))
+    (if (> (length lines) 0) (backward-delete-char 1))))
+
+(defun diff-actor-wait-msec (msec)
+  (sit-for (/ (float (random msec)) 1000)))
 
 (defun diff-actor-lines-in-range (range)
   (if (nth 1 range)
@@ -174,24 +210,28 @@
   (let ((diff-lines (split-string diff-chunk "\n"))
         (curr-diff) (diff-part 'old))
     (dolist (line diff-lines curr-diff)
-      (cond
-       ((diff-actor-start-of-diff line)
-        ;;(when curr-diff
-        ;;  (setq ret-value (append ret-value (list curr-diff))))
-        (setq curr-diff (list 'header line
-                              'old ""
-                              'new "")))
-       ((diff-actor-sep-of-diff line)
-        (setq diff-part 'new))
-       (t
-        (if curr-diff
-            (if (eq diff-part 'old)
-                (let ((curr-diff-old (plist-get curr-diff 'old)))
-                  (setq curr-diff (plist-put curr-diff 'old
-                                             (concat curr-diff-old line "\n"))))
-              (let ((curr-diff-new (plist-get curr-diff 'new)))
-                (setq curr-diff (plist-put curr-diff 'new
-                                           (concat curr-diff-new line "\n")))))))))))
+      (let ((line-trunc (if (string-equal "" line) line
+                         (substring line 2))))
+        (cond
+         ((diff-actor-start-of-diff line)
+          ;;(when curr-diff
+          ;;  (setq ret-value (append ret-value (list curr-diff))))
+          (setq curr-diff (list 'header line
+                                'old ""
+                                'new "")))
+         ((diff-actor-sep-of-diff line)
+          (setq diff-part 'new))
+         (t
+          (if curr-diff
+              (if (eq diff-part 'old)
+                  (let ((curr-diff-old (plist-get curr-diff 'old)))
+                    (setq curr-diff (plist-put curr-diff 'old
+                                               (concat curr-diff-old
+                                                       line-trunc "\n"))))
+                (let ((curr-diff-new (plist-get curr-diff 'new)))
+                  (setq curr-diff (plist-put curr-diff 'new
+                                             (concat curr-diff-new
+                                                     line-trunc "\n"))))))))))))
 
 ;; Diff region detection
 (defun diff-actor-start-of-diff (line)
